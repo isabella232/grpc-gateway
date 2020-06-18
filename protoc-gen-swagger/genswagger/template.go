@@ -132,6 +132,7 @@ func queryParams(message *descriptor.Message, field *descriptor.Field, prefix st
 // If a cycle is discovered, an error is returned, as cyclical data structures aren't allowed
 //  in query parameters.
 func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter, touchedIn map[string]bool) (params []swaggerParameterObject, err error) {
+	return nil, nil
 	// make sure the parameter is not already listed as a path parameter
 	for _, pathParam := range pathParams {
 		if pathParam.Target == field {
@@ -497,6 +498,9 @@ func schemaOfField(f *descriptor.Field, reg *descriptor.Registry, refs refMap) s
 	if j, err := extractJSONSchemaFromFieldDescriptor(fd); err == nil {
 		updateSwaggerObjectFromJSONSchema(&ret, j, reg, f)
 	}
+	if _, err := extractParameterOptionFromFieldDescriptor(fd); err != nil {
+		debug(err)
+	}
 
 	return ret
 }
@@ -771,7 +775,6 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 				// Iterate over all the swagger parameters
 				parameters := swaggerParametersObject{}
 				for _, parameter := range b.PathParams {
-
 					var paramType, paramFormat, desc, collectionFormat, defaultValue string
 					var enumNames []string
 					var items *swaggerItemsObject
@@ -1738,6 +1741,30 @@ func extractOperationOptionFromMethodDescriptor(meth *pbdescriptor.MethodDescrip
 		return nil, fmt.Errorf("extension is %T; want an Operation", ext)
 	}
 	return opts, nil
+}
+
+// extractParameterOptionFromFieldDescriptor extracts the message of type
+// swagger_options.Parameter from a given proto method's descriptor.
+func extractParameterOptionFromFieldDescriptor(meth *pbdescriptor.FieldDescriptorProto) (*swagger_options.Parameter, error) {
+	if meth.Options == nil {
+		return nil, nil
+	}
+	if !proto.HasExtension(meth.Options, swagger_options.E_Openapiv2Parameter) {
+		return nil, nil
+	}
+	ext, err := proto.GetExtension(meth.Options, swagger_options.E_Openapiv2Parameter)
+	if err != nil {
+		return nil, err
+	}
+	opts, ok := ext.(*swagger_options.Parameter)
+	if !ok {
+		return nil, fmt.Errorf("extension is %T; want an Operation", ext)
+	}
+	return opts, nil
+}
+
+func debug(i ...interface{}) {
+	fmt.Fprint(os.Stderr, i)
 }
 
 // extractSchemaOptionFromMessageDescriptor extracts the message of type
