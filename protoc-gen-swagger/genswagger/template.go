@@ -132,7 +132,6 @@ func queryParams(message *descriptor.Message, field *descriptor.Field, prefix st
 // If a cycle is discovered, an error is returned, as cyclical data structures aren't allowed
 //  in query parameters.
 func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, prefix string, reg *descriptor.Registry, pathParams []descriptor.Parameter, touchedIn map[string]bool) (params []swaggerParameterObject, err error) {
-	return nil, nil
 	// make sure the parameter is not already listed as a path parameter
 	for _, pathParam := range pathParams {
 		if pathParam.Target == field {
@@ -157,6 +156,16 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 		if items != nil && (items.Type == "" || items.Type == "object") && !isEnum {
 			return nil, nil // TODO: currently, mapping object in query parameter is not supported
 		}
+		paramOpt, err := extractParameterOptionFromFieldDescriptor(field.FieldDescriptorProto)
+		if paramOpt == nil {
+			return nil, err
+		}
+		if paramOpt.In == swagger_options.Parameter_INVALID {
+			return nil, fmt.Errorf("option parameter for field %s must contain a valid \"in\" field", *field.Name)
+		}
+		if paramOpt.In == swagger_options.Parameter_PATH {
+			return nil, fmt.Errorf("\"in\" field in option parameter for field %s must not equal \"path\"", *field.Name)
+		}
 		desc := schema.Description
 		if schema.Title != "" { // merge title because title of parameter object will be ignored
 			desc = strings.TrimSpace(schema.Title + ". " + schema.Description)
@@ -170,10 +179,9 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 				break
 			}
 		}
-
 		param := swaggerParameterObject{
 			Description: desc,
-			In:          "query",
+			In:          strings.ToLower(paramOpt.In.String()),
 			Default:     schema.Default,
 			Type:        schema.Type,
 			Items:       schema.Items,
@@ -250,6 +258,7 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 		} else {
 			fieldName = field.GetName()
 		}
+		// TODO: Get rid of dot-delimited naming scheme.
 		p, err := nestedQueryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams, touchedOut)
 		if err != nil {
 			return nil, err
@@ -498,10 +507,7 @@ func schemaOfField(f *descriptor.Field, reg *descriptor.Registry, refs refMap) s
 	if j, err := extractJSONSchemaFromFieldDescriptor(fd); err == nil {
 		updateSwaggerObjectFromJSONSchema(&ret, j, reg, f)
 	}
-	if _, err := extractParameterOptionFromFieldDescriptor(fd); err != nil {
-		debug(err)
-	}
-
+	
 	return ret
 }
 

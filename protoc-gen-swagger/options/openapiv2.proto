@@ -171,9 +171,18 @@ message Operation {
 }
 
 // Describes a single operation parameter.  A unique parameter is defined by a combination of a name and location.
+// Borrowed from https://github.com/googleapis/gnostic/blob/master/openapiv3/OpenAPIv3.proto
 message Parameter {
+  enum In {
+    INVALID = 0 ;
+    QUERY = 1;
+    HEADER = 2;
+    PATH = 3;
+    COOKIE = 4;
+  }
+  
   string name = 1;
-  string in = 2;
+  In in = 2;
   string description = 3;
   bool required = 4;
   bool deprecated = 5;
