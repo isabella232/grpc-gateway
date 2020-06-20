@@ -138,7 +138,7 @@ type swaggerParameterObject struct {
 	Enum             []string            `json:"enum,omitempty"`
 	CollectionFormat string              `json:"collectionFormat,omitempty"`
 	Default          string              `json:"default,omitempty"`
-	MinItems         *int                `json:"minItems,omitempty"`
+	MinItems         uint64                `json:"minItems,omitempty"`
 
 	// Or you can explicitly refer to another type. If this is defined all
 	// other fields should be empty

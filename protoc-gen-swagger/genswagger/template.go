@@ -19,6 +19,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	pbdescriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
 	structpb "github.com/golang/protobuf/ptypes/struct"
+
 	"github.com/grpc-ecosystem/grpc-gateway/internal/casing"
 	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
 	swagger_options "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
@@ -161,13 +162,15 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 			return nil, err
 		}
 		if paramOpt.In == swagger_options.Parameter_INVALID {
-			return nil, fmt.Errorf("option parameter for field %s must contain a valid \"in\" field", *field.Name)
+			return nil, fmt.Errorf("option parameter for field %q must contain a valid \"in\" field", *field.Name)
 		}
 		if paramOpt.In == swagger_options.Parameter_PATH {
-			return nil, fmt.Errorf("\"in\" field in option parameter for field %s must not equal \"path\"", *field.Name)
+			return nil, fmt.Errorf("\"in\" field in option parameter for field %q must not equal \"path\"", *field.Name)
 		}
-		desc := schema.Description
-		if schema.Title != "" { // merge title because title of parameter object will be ignored
+		var desc string
+		if paramOpt.Description != "" {
+			desc = paramOpt.Description
+		} else if schema.Title != "" { // merge title because title of parameter object will be ignored
 			desc = strings.TrimSpace(schema.Title + ". " + schema.Description)
 		}
 
@@ -192,7 +195,9 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 			param.CollectionFormat = "multi"
 		}
 
-		if reg.GetUseJSONNamesForFields() {
+		if paramOpt.Name != "" {
+			param.Name = paramOpt.Name
+		} else if reg.GetUseJSONNamesForFields() {
 			param.Name = prefix + field.GetJsonName()
 		} else {
 			param.Name = prefix + field.GetName()
@@ -507,7 +512,7 @@ func schemaOfField(f *descriptor.Field, reg *descriptor.Registry, refs refMap) s
 	if j, err := extractJSONSchemaFromFieldDescriptor(fd); err == nil {
 		updateSwaggerObjectFromJSONSchema(&ret, j, reg, f)
 	}
-	
+
 	return ret
 }
 
@@ -776,6 +781,10 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 			lastFile = svc.File
 			svcBaseIdx = svcIdx
 		}
+		// paramNamesSeen is used to keep track of parameter names seen so far to detect duplicates.
+		// This is necessary since we don't want dot-delimited path params like "user.id" for nested fields.
+		// If there are duplicate "id" fields, an error will be returned.
+		//paramNamesSeen := make(map[string]bool)
 		for methIdx, meth := range svc.Methods {
 			for bIdx, b := range meth.Bindings {
 				// Iterate over all the swagger parameters
@@ -784,7 +793,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 					var paramType, paramFormat, desc, collectionFormat, defaultValue string
 					var enumNames []string
 					var items *swaggerItemsObject
-					var minItems *int
+					var minItems uint64
 					switch pt := parameter.Target.GetType(); pt {
 					case pbdescriptor.FieldDescriptorProto_TYPE_GROUP, pbdescriptor.FieldDescriptorProto_TYPE_MESSAGE:
 						if descriptor.IsWellKnownType(parameter.Target.GetTypeName()) {
@@ -838,8 +847,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 						paramType = "array"
 						paramFormat = ""
 						collectionFormat = reg.GetRepeatedPathParamSeparatorName()
-						minItems = new(int)
-						*minItems = 1
+						minItems = 1
 					}
 
 					if desc == "" {
