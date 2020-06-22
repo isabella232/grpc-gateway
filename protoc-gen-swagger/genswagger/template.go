@@ -257,14 +257,9 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 	touchedOut[*msg.Name] = true
 
 	for _, nestedField := range msg.Fields {
-		var fieldName string
-		if reg.GetUseJSONNamesForFields() {
-			fieldName = field.GetJsonName()
-		} else {
-			fieldName = field.GetName()
-		}
-		// TODO: Get rid of dot-delimited naming scheme.
-		p, err := nestedQueryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams, touchedOut)
+		p, err := nestedQueryParams(msg, nestedField, "", reg, pathParams, touchedOut)
+		// TODO: Detect duplicate names in query params.
+		//p, err := nestedQueryParams(msg, nestedField, prefix+fieldName+".", reg, pathParams, touchedOut)
 		if err != nil {
 			return nil, err
 		}
@@ -691,10 +686,17 @@ func resolveFullyQualifiedNameToSwaggerNames(messages []string, useFQNForSwagger
 	return uniqueNames
 }
 
-var canRegexp = regexp.MustCompile("{([a-zA-Z][a-zA-Z0-9_.]*).*}")
+var (
+	canRegexp = regexp.MustCompile("{([a-zA-Z][a-zA-Z0-9_.]*).*}")
+	// paramParamsSeen is used to keep track of parameter names seen so far to detect duplicates.
+	// This is necessary since we don't want dot-delimited path params like "user.id" for nested fields.
+	// If there are duplicate "id" fields, an error will be returned.
+	// map unnested path param names ("id") to full param names ("user.org.id")
+	pathParamsSeen = make(map[string]string)
+)
 
 // Swagger expects paths of the form /path/{string_value} but grpc-gateway paths are expected to be of the form /path/{string_value=strprefix/*}. This should reformat it correctly.
-func templateToSwaggerPath(path string, reg *descriptor.Registry, fields []*descriptor.Field, msgs []*descriptor.Message) string {
+func templateToSwaggerPath(path string, reg *descriptor.Registry, fields []*descriptor.Field, msgs []*descriptor.Message, b *descriptor.Binding) (string, error) {
 	// It seems like the right thing to do here is to just use
 	// strings.Split(path, "/") but that breaks badly when you hit a url like
 	// /{my_field=prefix/*}/ and end up with 2 sections representing my_field.
@@ -757,10 +759,57 @@ func templateToSwaggerPath(path string, reg *descriptor.Registry, fields []*desc
 		if isResourceName(prefix) {
 			continue
 		}
+		if isTemplate(part) {
+			fullName := part[1 : len(part)-1]
+			resolvedParamName, err := resolveSwaggerPathParamName(fullName, b)
+			if err != nil {
+				return "", err
+			}
+			// If there's a naming conflict (more than one path params resolve to the same name)
+			// and it's not the same param (since this method can get called multiple times), return an error.
+			if conflictingFullName, ok := pathParamsSeen[resolvedParamName]; ok && fullName != conflictingFullName {
+				return "", fmt.Errorf("a duplicate path parameter %q was detected for path parameter %q. The %q path parameter resolves "+
+					"to the same parameter name", fullName, resolvedParamName, conflictingFullName)
+			}
+			pathParamsSeen[resolvedParamName] = fullName
+			part = fmt.Sprintf("{%s}", resolvedParamName)
+		}
 		parts[index] = canRegexp.ReplaceAllString(part, "{$1}")
 	}
 
-	return strings.Join(parts, "/")
+	return strings.Join(parts, "/"), nil
+}
+
+func isTemplate(s string) bool {
+	return len(s) > 0 && s[0] == '{' && s[len(s)-1] == '}'
+}
+
+// resolveSwaggerPathParamName resolves a full path param name (e.g: "user.org.id") to a Swagger name
+// by unnesting and applying parameter name proto options if they were defined.
+func resolveSwaggerPathParamName(fullParamName string, b *descriptor.Binding) (string, error) {
+	resolvedName := unnestPathParam(fullParamName)
+	for _, p := range b.PathParams {
+		if fullParamName != p.String() {
+			continue
+		}
+		// Found matching path param.
+		opt, err := extractParameterOptionFromFieldDescriptor(p.Target.FieldDescriptorProto)
+		if err != nil {
+			return "", err
+		}
+		if opt == nil || opt.Name == "" {
+			break
+		}
+		resolvedName = opt.Name
+	}
+	return resolvedName, nil
+}
+
+// unnestPathParam "un-nests" path params like "user.id" to id.
+// /users/{user.id} -> /users/{id}
+func unnestPathParam(pathParam string) string {
+	tokens := strings.Split(pathParam, ".")
+	return tokens[len(tokens)-1]
 }
 
 func isResourceName(prefix string) bool {
@@ -781,10 +830,6 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 			lastFile = svc.File
 			svcBaseIdx = svcIdx
 		}
-		// paramNamesSeen is used to keep track of parameter names seen so far to detect duplicates.
-		// This is necessary since we don't want dot-delimited path params like "user.id" for nested fields.
-		// If there are duplicate "id" fields, an error will be returned.
-		//paramNamesSeen := make(map[string]bool)
 		for methIdx, meth := range svc.Methods {
 			for bIdx, b := range meth.Bindings {
 				// Iterate over all the swagger parameters
@@ -857,6 +902,7 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 					if reg.GetUseJSONNamesForFields() {
 						parameterString = lowerCamelCase(parameterString, meth.RequestType.Fields, msgs)
 					}
+					parameterString = *parameter.Target.Name
 					parameters = append(parameters, swaggerParameterObject{
 						Name:        parameterString,
 						Description: desc,
@@ -925,7 +971,11 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 					parameters = append(parameters, queryParams...)
 				}
 
-				pathItemObject, ok := paths[templateToSwaggerPath(b.PathTmpl.Template, reg, meth.RequestType.Fields, msgs)]
+				path, err := templateToSwaggerPath(b.PathTmpl.Template, reg, meth.RequestType.Fields, msgs, b)
+				if err != nil {
+					return err
+				}
+				pathItemObject, ok := paths[path]
 				if !ok {
 					pathItemObject = swaggerPathItemObject{}
 				}
@@ -1149,7 +1199,11 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 					pathItemObject.Patch = operationObject
 					break
 				}
-				paths[templateToSwaggerPath(b.PathTmpl.Template, reg, meth.RequestType.Fields, msgs)] = pathItemObject
+				path, err = templateToSwaggerPath(b.PathTmpl.Template, reg, meth.RequestType.Fields, msgs, b)
+				if err != nil {
+					return err
+				}
+				paths[path] = pathItemObject
 			}
 		}
 	}
@@ -1759,14 +1813,14 @@ func extractOperationOptionFromMethodDescriptor(meth *pbdescriptor.MethodDescrip
 
 // extractParameterOptionFromFieldDescriptor extracts the message of type
 // swagger_options.Parameter from a given proto method's descriptor.
-func extractParameterOptionFromFieldDescriptor(meth *pbdescriptor.FieldDescriptorProto) (*swagger_options.Parameter, error) {
-	if meth.Options == nil {
+func extractParameterOptionFromFieldDescriptor(fd *pbdescriptor.FieldDescriptorProto) (*swagger_options.Parameter, error) {
+	if fd.Options == nil {
 		return nil, nil
 	}
-	if !proto.HasExtension(meth.Options, swagger_options.E_Openapiv2Parameter) {
+	if !proto.HasExtension(fd.Options, swagger_options.E_Openapiv2Parameter) {
 		return nil, nil
 	}
-	ext, err := proto.GetExtension(meth.Options, swagger_options.E_Openapiv2Parameter)
+	ext, err := proto.GetExtension(fd.Options, swagger_options.E_Openapiv2Parameter)
 	if err != nil {
 		return nil, err
 	}
@@ -1778,7 +1832,7 @@ func extractParameterOptionFromFieldDescriptor(meth *pbdescriptor.FieldDescripto
 }
 
 func debug(i ...interface{}) {
-	fmt.Fprint(os.Stderr, i)
+	fmt.Fprintln(os.Stderr, i)
 }
 
 // extractSchemaOptionFromMessageDescriptor extracts the message of type
