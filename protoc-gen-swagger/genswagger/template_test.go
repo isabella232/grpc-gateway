@@ -63,6 +63,7 @@ func TestMessageToQueryParametersWithEnumAsInt(t *testing.T) {
 							Name:   proto.String("a"),
 							Type:   protodescriptor.FieldDescriptorProto_TYPE_STRING.Enum(),
 							Number: proto.Int32(1),
+							Options: &protodescriptor.FieldOptions{}
 						},
 						{
 							Name:   proto.String("b"),
@@ -2324,6 +2325,7 @@ func TestRenderMessagesAsDefinition(t *testing.T) {
 			msgs := []*descriptor.Message{}
 			for _, msgdesc := range test.msgDescs {
 				msgdesc.Options = &protodescriptor.MessageOptions{}
+				msgdesc.Options
 				msgs = append(msgs, &descriptor.Message{DescriptorProto: msgdesc})
 			}
 

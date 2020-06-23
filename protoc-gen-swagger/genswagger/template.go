@@ -19,6 +19,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	pbdescriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
 	structpb "github.com/golang/protobuf/ptypes/struct"
+
 	"github.com/grpc-ecosystem/grpc-gateway/internal/casing"
 	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
 	swagger_options "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
@@ -156,6 +157,16 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 		if items != nil && (items.Type == "" || items.Type == "object") && !isEnum {
 			return nil, nil // TODO: currently, mapping object in query parameter is not supported
 		}
+		paramOpt, err := extractParameterOptionFromFieldDescriptor(field.FieldDescriptorProto)
+		if paramOpt == nil {
+			return nil, err
+		}
+		if paramOpt.In == swagger_options.Parameter_INVALID {
+			return nil, fmt.Errorf("option parameter for field %s must contain a valid \"in\" field", *field.Name)
+		}
+		if paramOpt.In == swagger_options.Parameter_PATH {
+			return nil, fmt.Errorf("\"in\" field in option parameter for field %s must not equal \"path\"", *field.Name)
+		}
 		desc := schema.Description
 		if schema.Title != "" { // merge title because title of parameter object will be ignored
 			desc = strings.TrimSpace(schema.Title + ". " + schema.Description)
@@ -169,10 +180,9 @@ func nestedQueryParams(message *descriptor.Message, field *descriptor.Field, pre
 				break
 			}
 		}
-
 		param := swaggerParameterObject{
 			Description: desc,
-			In:          "query",
+			In:          strings.ToLower(paramOpt.In.String()),
 			Default:     schema.Default,
 			Type:        schema.Type,
 			Items:       schema.Items,
@@ -771,7 +781,6 @@ func renderServices(services []*descriptor.Service, paths swaggerPathsObject, re
 				// Iterate over all the swagger parameters
 				parameters := swaggerParametersObject{}
 				for _, parameter := range b.PathParams {
-
 					var paramType, paramFormat, desc, collectionFormat, defaultValue string
 					var enumNames []string
 					var items *swaggerItemsObject
@@ -1734,6 +1743,26 @@ func extractOperationOptionFromMethodDescriptor(meth *pbdescriptor.MethodDescrip
 		return nil, err
 	}
 	opts, ok := ext.(*swagger_options.Operation)
+	if !ok {
+		return nil, fmt.Errorf("extension is %T; want an Operation", ext)
+	}
+	return opts, nil
+}
+
+// extractParameterOptionFromFieldDescriptor extracts the message of type
+// swagger_options.Parameter from a given proto method's descriptor.
+func extractParameterOptionFromFieldDescriptor(meth *pbdescriptor.FieldDescriptorProto) (*swagger_options.Parameter, error) {
+	if meth.Options == nil {
+		return nil, nil
+	}
+	if !proto.HasExtension(meth.Options, swagger_options.E_Openapiv2Parameter) {
+		return nil, nil
+	}
+	ext, err := proto.GetExtension(meth.Options, swagger_options.E_Openapiv2Parameter)
+	if err != nil {
+		return nil, err
+	}
+	opts, ok := ext.(*swagger_options.Parameter)
 	if !ok {
 		return nil, fmt.Errorf("extension is %T; want an Operation", ext)
 	}

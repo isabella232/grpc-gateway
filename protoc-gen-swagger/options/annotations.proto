@@ -42,3 +42,7 @@ extend google.protobuf.FieldOptions {
   // different descriptor messages.
   JSONSchema openapiv2_field = 1042;
 }
+
+extend google.protobuf.FieldOptions {
+  Parameter openapiv2_parameter = 9000;
+}

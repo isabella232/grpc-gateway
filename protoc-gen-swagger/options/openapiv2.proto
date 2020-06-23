@@ -170,6 +170,39 @@ message Operation {
   map<string, google.protobuf.Value> extensions = 13;
 }
 
+// Describes a single operation parameter. A unique parameter is defined by a combination of a name and location.
+// Borrowed from https://github.com/googleapis/gnostic/blob/master/openapiv3/OpenAPIv3.proto
+// HACKY: This uses the v3 representation of a parameter, which is a lot more straightforward than the v2 model.
+message Parameter {
+  enum In {
+    INVALID = 0 ;
+    QUERY = 1;
+    HEADER = 2;
+    PATH = 3;
+    COOKIE = 4;
+  }
+  
+  string name = 1;
+  In in = 2;
+  string description = 3;
+  bool required = 4;
+  bool deprecated = 5;
+  bool allow_empty_value = 6;
+  string style = 7;
+  bool explode = 8;
+  bool allow_reserved = 9;
+  oneof SchemaOrRef {
+    string _ref = 10;
+    Schema schema = 11;
+  }
+  google.protobuf.Any example = 12;
+  //  ExamplesOrReferences examples = 12;
+  reserved 13;
+//  MediaTypes content = 13;
+  reserved 14;
+  map<string, google.protobuf.Value> extensions = 15;
+}
+
 // `Response` is a representation of OpenAPI v2 specification's Response object.
 //
 // See: https://github.com/OAI/OpenAPI-Specification/blob/3.0.0/versions/2.0.md#responseObject
