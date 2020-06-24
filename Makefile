@@ -15,6 +15,9 @@ SWAGGER_PLUGIN_SRC= utilities/doc.go \
 		    protoc-gen-swagger/genswagger/template.go \
 		    protoc-gen-swagger/main.go
 SWAGGER_PLUGIN_PKG=./protoc-gen-swagger
+OPENAPI_PLUGIN=bin/protoc-gen-openapi
+OPENAPI_PLUGIN_SRC=protoc-gen-openapi/genopenapi/generator.go
+OPENAPI_PLUGIN_PKG=./protoc-gen-openapi
 GATEWAY_PLUGIN=bin/protoc-gen-grpc-gateway
 GATEWAY_PLUGIN_PKG=./protoc-gen-grpc-gateway
 GATEWAY_PLUGIN_SRC= utilities/doc.go \
@@ -47,8 +50,9 @@ OUTPUT_DIR=_output
 RUNTIME_PROTO=internal/errors.proto
 RUNTIME_GO=$(RUNTIME_PROTO:.proto=.pb.go)
 
-OPENAPIV2_PROTO=protoc-gen-swagger/options/openapiv2.proto protoc-gen-swagger/options/annotations.proto
+OPENAPIV2_PROTO=protoc-gen-swagger/options/openapiv2.proto protoc-gen-swagger/options/annotations.proto protoc-gen-swagger/options/openapiv3.proto
 OPENAPIV2_GO=$(OPENAPIV2_PROTO:.proto=.pb.go)
+#OPENAPIV3_GO=$(OPENAPIV3_PROTO:.proto=.pb.go)
 
 PKGMAP=Mgoogle/protobuf/field_mask.proto=google.golang.org/genproto/protobuf/field_mask,Mgoogle/protobuf/descriptor.proto=$(GO_PLUGIN_PKG)/descriptor,Mexamples/internal/proto/sub/message.proto=github.com/grpc-ecosystem/grpc-gateway/examples/internal/proto/sub
 ADDITIONAL_GW_FLAGS=
@@ -160,6 +164,9 @@ $(GATEWAY_PLUGIN): $(RUNTIME_GO) $(GATEWAY_PLUGIN_SRC)
 
 $(SWAGGER_PLUGIN): $(SWAGGER_PLUGIN_SRC) $(OPENAPIV2_GO)
 	go build -o $@ $(SWAGGER_PLUGIN_PKG)
+
+$(OPENAPI_PLUGIN): $(OPENAPI_PLUGIN_SRC) $(OPENAPIV2_GO)
+	go build -o $@ $(OPENAPI_PLUGIN_PKG)
 
 $(EXAMPLE_SVCSRCS): $(GO_PLUGIN) $(EXAMPLES)
 	protoc -I $(PROTOC_INC_PATH) -I. -I$(GOOGLEAPIS_DIR) --plugin=$(GO_PLUGIN) --go_out=$(PKGMAP),plugins=grpc,paths=source_relative:. $(EXAMPLES)
