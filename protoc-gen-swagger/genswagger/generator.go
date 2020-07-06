@@ -15,17 +15,18 @@ import (
 	protocdescriptor "github.com/golang/protobuf/protoc-gen-go/descriptor"
 	plugin "github.com/golang/protobuf/protoc-gen-go/plugin"
 	"github.com/golang/protobuf/ptypes/any"
-	"github.com/grpc-ecosystem/grpc-gateway/internal"
+
 	"github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/descriptor"
-	gen "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway/generator"
 	swagger_options "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger/options"
+
+	"github.com/grpc-ecosystem/grpc-gateway/internal"
 )
 
 var (
 	errNoTargetService = errors.New("no target service defined in the file")
 )
 
-type generator struct {
+type SwaggerGenerator struct {
 	reg *descriptor.Registry
 }
 
@@ -35,8 +36,8 @@ type wrapper struct {
 }
 
 // New returns a new generator which generates grpc gateway files.
-func New(reg *descriptor.Registry) gen.Generator {
-	return &generator{reg: reg}
+func New(reg *descriptor.Registry) *SwaggerGenerator {
+	return &SwaggerGenerator{reg: reg}
 }
 
 // Merge a lot of swagger file (wrapper) to single one swagger file
@@ -153,7 +154,7 @@ func encodeSwagger(file *wrapper) (*plugin.CodeGeneratorResponse_File, error) {
 	}, nil
 }
 
-func (g *generator) Generate(targets []*descriptor.File) ([]*plugin.CodeGeneratorResponse_File, error) {
+func (g *SwaggerGenerator) Generate(targets []*descriptor.File) ([]*plugin.CodeGeneratorResponse_File, error) {
 	var files []*plugin.CodeGeneratorResponse_File
 	if g.reg.IsAllowMerge() {
 		var mergedTarget *descriptor.File

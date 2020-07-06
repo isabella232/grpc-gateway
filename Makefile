@@ -16,7 +16,9 @@ SWAGGER_PLUGIN_SRC= utilities/doc.go \
 		    protoc-gen-swagger/main.go
 SWAGGER_PLUGIN_PKG=./protoc-gen-swagger
 OPENAPI_PLUGIN=bin/protoc-gen-openapi
-OPENAPI_PLUGIN_SRC=protoc-gen-openapi/genopenapi/generator.go
+OPENAPI_PLUGIN_SRC=protoc-gen-openapi/genopenapi/generator.go \
+		    protoc-gen-openapi/genopenapi/template.go \
+		    protoc-gen-openapi/main.go
 OPENAPI_PLUGIN_PKG=./protoc-gen-openapi
 GATEWAY_PLUGIN=bin/protoc-gen-grpc-gateway
 GATEWAY_PLUGIN_PKG=./protoc-gen-grpc-gateway
@@ -43,6 +45,7 @@ GATEWAY_PLUGIN_SRC= utilities/doc.go \
 		    protoc-gen-grpc-gateway/main.go
 GATEWAY_PLUGIN_FLAGS?=
 SWAGGER_PLUGIN_FLAGS?=
+OPENAPI_PLUGIN_FLAGS?=
 
 GOOGLEAPIS_DIR=third_party/googleapis
 OUTPUT_DIR=_output
@@ -50,9 +53,10 @@ OUTPUT_DIR=_output
 RUNTIME_PROTO=internal/errors.proto
 RUNTIME_GO=$(RUNTIME_PROTO:.proto=.pb.go)
 
-OPENAPIV2_PROTO=protoc-gen-swagger/options/openapiv2.proto protoc-gen-swagger/options/annotations.proto protoc-gen-swagger/options/openapiv3.proto
+OPENAPIV2_PROTO=protoc-gen-swagger/options/openapiv2.proto protoc-gen-swagger/options/annotations.proto
 OPENAPIV2_GO=$(OPENAPIV2_PROTO:.proto=.pb.go)
-#OPENAPIV3_GO=$(OPENAPIV3_PROTO:.proto=.pb.go)
+OPENAPIV3_PROTO=protoc-gen-openapi/options/openapiv3.proto protoc-gen-openapi/options/annotations.proto
+OPENAPIV3_GO=$(OPENAPIV3_PROTO:.proto=.pb.go)
 
 PKGMAP=Mgoogle/protobuf/field_mask.proto=google.golang.org/genproto/protobuf/field_mask,Mgoogle/protobuf/descriptor.proto=$(GO_PLUGIN_PKG)/descriptor,Mexamples/internal/proto/sub/message.proto=github.com/grpc-ecosystem/grpc-gateway/examples/internal/proto/sub
 ADDITIONAL_GW_FLAGS=
@@ -62,6 +66,10 @@ endif
 ADDITIONAL_SWG_FLAGS=
 ifneq "$(SWAGGER_PLUGIN_FLAGS)" ""
 	ADDITIONAL_SWG_FLAGS=,$(SWAGGER_PLUGIN_FLAGS)
+endif
+ADDITIONAL_OPENAPI_FLAGS=
+ifneq "$(OPENAPI_PLUGIN_FLAGS)" ""
+	ADDITIONAL_OPENAPI_FLAGS=,$(OPENAPI_PLUGIN_FLAGS)
 endif
 SWAGGER_EXAMPLES=examples/internal/proto/examplepb/echo_service.proto \
 	 examples/internal/proto/examplepb/a_bit_of_everything.proto \
@@ -158,6 +166,9 @@ $(RUNTIME_GO): $(RUNTIME_PROTO) $(GO_PLUGIN)
 
 $(OPENAPIV2_GO): $(OPENAPIV2_PROTO) $(GO_PLUGIN)
 	protoc -I $(PROTOC_INC_PATH) --plugin=$(GO_PLUGIN) -I. --go_out=$(PKGMAP),paths=source_relative:. $(OPENAPIV2_PROTO)
+	
+$(OPENAPIV3_GO): $(OPENAPIV3_PROTO) $(GO_PLUGIN)
+	protoc -I $(PROTOC_INC_PATH) --plugin=$(GO_PLUGIN) -I. --go_out=$(PKGMAP),paths=source_relative:. $(OPENAPIV3_PROTO)
 
 $(GATEWAY_PLUGIN): $(RUNTIME_GO) $(GATEWAY_PLUGIN_SRC)
 	go build -o $@ $(GATEWAY_PLUGIN_PKG)
@@ -165,7 +176,7 @@ $(GATEWAY_PLUGIN): $(RUNTIME_GO) $(GATEWAY_PLUGIN_SRC)
 $(SWAGGER_PLUGIN): $(SWAGGER_PLUGIN_SRC) $(OPENAPIV2_GO)
 	go build -o $@ $(SWAGGER_PLUGIN_PKG)
 
-$(OPENAPI_PLUGIN): $(OPENAPI_PLUGIN_SRC) $(OPENAPIV2_GO)
+$(OPENAPI_PLUGIN): $(OPENAPI_PLUGIN_SRC) $(OPENAPIV3_GO)
 	go build -o $@ $(OPENAPI_PLUGIN_PKG)
 
 $(EXAMPLE_SVCSRCS): $(GO_PLUGIN) $(EXAMPLES)
@@ -243,13 +254,15 @@ lint:
 	golint --set_exit_status ./utilities/...
 	golint --set_exit_status ./protoc-gen-grpc-gateway/...
 	golint --set_exit_status ./protoc-gen-swagger/...
+	golint --set_exit_status ./protoc-gen-openapi/...
 	go vet ./runtime || true
 	go vet ./utilities/...
 	go vet ./protoc-gen-grpc-gateway/...
 	go vet ./protoc-gen-swagger/...
+	go vet ./protoc-gen-openapi/...
 
 clean:
-	rm -f $(GATEWAY_PLUGIN) $(SWAGGER_PLUGIN)
+	rm -f $(GATEWAY_PLUGIN) $(SWAGGER_PLUGIN) $(OPENAPI_PLUGIN)
 distclean: clean
 	rm -f $(GO_PLUGIN)
 realclean: distclean
@@ -260,6 +273,7 @@ realclean: distclean
 	rm -f $(HELLOWORLD_SVCSRCS)
 	rm -f $(HELLOWORLD_GWSRCS)
 	rm -f $(OPENAPIV2_GO)
+	rm -f $(OPENAPIV3_GO)
 	rm -f $(RUNTIME_TEST_SRCS)
 
 .PHONY: generate examples test lint clean distclean realclean

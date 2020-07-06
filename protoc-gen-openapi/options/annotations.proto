@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package grpc.gateway.protoc_gen_openapi.options;
+
+option go_package = "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-openapi/options";
+
+import "google/protobuf/descriptor.proto";
+import "protoc-gen-openapi/options/openapiv3.proto";
+
+extend google.protobuf.FieldOptions {
+    Parameter openapiv3_parameter = 9000;
+}
